@@ -1,0 +1,20 @@
+{
+  "name": "cars24-social-calendar-backend",
+  "version": "1.0.0",
+  "description": "API + Neon Postgres backend for the Cars24 Social Calendar dashboard",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "pg": "^8.12.0"
+  }
+}
