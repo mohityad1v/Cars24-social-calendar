@@ -422,6 +422,8 @@ main{max-width:1080px;margin:0 auto;padding:36px 32px 60px}
       <button class="btn-link edit-only" id="btnImport">Import</button>
       <button class="btn-link" id="btnBackup" title="Download a backup of all your campaigns & marks">Backup</button>
       <button class="btn-link" id="btnRestore" title="Restore from a backup file">Restore</button>
+      <button class="btn-link" id="btnDedupe" title="Merge duplicate campaigns into one">Fix duplicates</button>
+      <button class="btn-link edit-only" id="btnSyncSheet" title="Pull campaigns from the Google Sheet">Sync from Sheet</button>
       <input type="file" id="restoreFile" accept="application/json,.json" hidden>
     </div>
   </div>
@@ -1229,7 +1231,7 @@ document.getElementById('impLoad').onclick=()=>{
       if(!g('name'))continue;
       const norm=d=>{const x=new Date(d);return isNaN(x)?d:x.toISOString().slice(0,10);};
       out.push({name:g('name'),start:norm(g('start')),end:norm(g('end')),platform:g('platform'),posts:+g('posts')||0,reach:+String(g('reach')).replace(/[, ]/g,'')||0,eng:+g('eng')||0,status:normStatus(g('status')),amplification:g('amp'),notes:g('notes'),hero:g('hero'),video:g('video'),gallery:g('gallery').split(/[\n,;]/).map(s=>s.trim()).filter(Boolean),link:g('link'),types:parseTypes(g('type')),type:parseTypes(g('type'))[0]});}
-    if(out.length){CAMPAIGNS=CAMPAIGNS.filter(c=>!c.sample).concat(out);saveCampaigns();render();impM.classList.remove('open');}
+    if(out.length){CAMPAIGNS=CAMPAIGNS.filter(c=>!c.sample).concat(out);dedupeCampaigns();saveCampaigns();render();impM.classList.remove('open');}
   }
   document.getElementById('pasteBox').value='';
 };
@@ -1241,6 +1243,18 @@ let _formState={hero:'',gallery:[],media:[],types:[],editingId:null};
 function genUid(){return 'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
 function ensureUids(){if(Array.isArray(CAMPAIGNS))CAMPAIGNS.forEach(c=>{if(c&&!c.uid)c.uid=genUid();});}
 function campaignKey(c){return c.uid||(c.name+'|'+c.start);}
+function _richness(c){return (c.reach>0?4:0)+(c.hero?3:0)+((c.gallery&&c.gallery.length)||0)+((c.media&&c.media.length)||0)+(c.posts>0?1:0)+(c.notes?1:0)+(c.link?1:0);}
+function dedupeCampaigns(){
+  const seen={},order=[];
+  (CAMPAIGNS||[]).forEach(c=>{
+    const k=((c.name||'').trim().toLowerCase())+'|'+((c.start||'').trim());
+    if(!(k in seen)){seen[k]=c;order.push(k);}
+    else if(_richness(c)>_richness(seen[k])){seen[k]=c;}
+  });
+  const before=(CAMPAIGNS||[]).length;
+  CAMPAIGNS=order.map(k=>seen[k]);
+  return before-CAMPAIGNS.length;
+}
 function compressImage(file,maxWidth=900,quality=0.7){
   return new Promise((resolve,reject)=>{
     const reader=new FileReader();
@@ -1430,6 +1444,26 @@ document.getElementById('btnBackup').onclick=()=>{
   setBanner('Backup downloaded \u00b7 '+CAMPAIGNS.length+' campaigns');setTimeout(()=>setBanner(''),2800);
 };
 document.getElementById('btnRestore').onclick=()=>document.getElementById('restoreFile').click();
+document.getElementById('btnDedupe').onclick=()=>{
+  const removed=dedupeCampaigns();
+  if(removed>0){saveCampaigns();render();setBanner('Removed '+removed+' duplicate'+(removed>1?'s':'')+' \u2713');}
+  else setBanner('No duplicates found \u2713');
+  setTimeout(()=>setBanner(''),3000);
+};
+document.getElementById('btnSyncSheet').onclick=async()=>{
+  if(!confirm('Sync from the Google Sheet? This replaces the campaign list with what\u2019s in the sheet.'))return;
+  setBanner('Syncing from Sheet\u2026');
+  try{
+    const r=await fetch(API_BASE+'/api/sync-from-sheet',{method:'POST'});
+    const j=await r.json();
+    if(!r.ok||j.error)throw new Error(j.error||('HTTP '+r.status));
+    await loadFromNeon();
+    setBanner('Synced '+j.count+' campaign'+(j.count!==1?'s':'')+' from Sheet \u2713');
+  }catch(e){
+    setBanner('Sync failed: '+e.message,true);
+  }
+  setTimeout(()=>setBanner(''),5000);
+};
 document.getElementById('restoreFile').addEventListener('change',e=>{
   const f=e.target.files&&e.target.files[0];if(!f){return;}
   const rd=new FileReader();
@@ -1497,7 +1531,12 @@ async function loadFromNeon(){
     const r = await fetch(API_BASE+'/api/state',{cache:'no-store'});
     if(!r.ok) throw new Error('bad status');
     const d = await r.json();
-    if(Array.isArray(d.campaigns)){ CAMPAIGNS = d.campaigns; _origSaveCampaigns(); }
+    if(Array.isArray(d.campaigns)){
+      CAMPAIGNS = d.campaigns;
+      const _removed = dedupeCampaigns();
+      if(_removed>0){ saveCampaigns(); setBanner('Removed '+_removed+' duplicate campaign'+(_removed>1?'s':'')+' \u2713'); setTimeout(()=>setBanner(''),4500); }
+      else { _origSaveCampaigns(); }
+    }
     if(d.marks){ MARKS=d.marks; _origStoreSet('c24_marks',MARKS); }
     if(d.removed){ REMOVED=d.removed; _origStoreSet('c24_removed',REMOVED); }
     if(d.heropos){ _heroPos=d.heropos; _origStoreSet('c24_heropos',_heroPos); }
